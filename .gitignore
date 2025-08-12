@@ -1,0 +1,79 @@
+# ---- Node.js (frontend + backend)
+node_modules/
+**/node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build output
+build/
+dist/
+.out/
+.next/
+out/
+.storybook-out/
+storybook-static/
+coverage/
+
+# Caches / temp
+.cache/
+.parcel-cache/
+.nyc_output/
+.cache-loader/
+.tmp/
+.temp/
+.tmp/**/*
+
+# TypeScript
+*.tsbuildinfo
+
+# Database (SQLite)
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+/data/*.db
+/data/*.sqlite*
+
+# Uploads or local storage (adjust if you want to commit these)
+uploads/
+storage/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test tooling outputs
+.jest/
+.cypress/
+playwright-report/
+test-results/
+
+# Package archives
+*.tgz
+
+# Misc
+*.orig
+*.rej
