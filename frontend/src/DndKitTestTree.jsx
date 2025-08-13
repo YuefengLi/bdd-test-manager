@@ -3,7 +3,7 @@
  * Tree visualization component using dnd-kit for a stable, custom implementation.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -260,6 +260,9 @@ export default function DndKitTestTree() {
 
 function DndTree({ nodes, byId, effective, visibleIds, selectedId, openNodes, setSelectedId, setOpenNodes, onMove, reload, onSetStatus, onAddTag }) {
   const sensors = useSensors(useSensor(PointerSensor));
+  const copyModeRef = useRef(false);
+  const draggingRef = useRef(false);
+  const [copyMode, setCopyMode] = useState(false);
   const flattenedTree = useMemo(() => {
     const result = [];
     function flatten(nodes, depth) {
@@ -300,34 +303,143 @@ function DndTree({ nodes, byId, effective, visibleIds, selectedId, openNodes, se
     return counts;
   }, [nodes, visibleIds]);
 
+  const onCopy = async ({ active, over }) => {
+    if (!active || !over || active.id === over.id) return;
+    const activeNode = byId.get(active.id);
+    const overNode = byId.get(over.id);
+    if (!activeNode || !overNode) return;
+
+    const target_parent_id = overNode.parent_id ?? null;
+    try {
+      const res = await api(`/nodes/${active.id}/copy`, {
+        method: 'POST',
+        body: JSON.stringify({
+          target_parent_id,
+          sibling_of: overNode.id,
+          include_subtree: true,
+          reset_explicit_to_inherit: true,
+          skip_duplicates: true,
+        })
+      });
+      await reload();
+      if (target_parent_id != null) {
+        setOpenNodes(prev => ({ ...prev, [target_parent_id]: true }));
+      }
+      const selectId = res?.new_root_id ?? null;
+      if (selectId) {
+        setSelectedId(selectId);
+      } else {
+        // If nothing created and no clear merge target, give user feedback
+        alert('No items copied (all duplicates or invalid destination).');
+      }
+    } catch (e) {
+      console.error('Copy failed', e);
+      alert(`Copy failed: ${e.message}`);
+    }
+  };
+
+  const handleDragStart = (event) => {
+    const ae = event?.activatorEvent;
+    const isCopy = !!(ae && (ae.ctrlKey || ae.metaKey));
+    copyModeRef.current = isCopy;
+    draggingRef.current = true;
+
+    const applyCursor = () => {
+      const isCopyNow = copyModeRef.current;
+      setCopyMode(isCopyNow);
+      try { document.body.style.cursor = isCopyNow ? 'copy' : ''; } catch {}
+    };
+
+    applyCursor();
+
+    // Listen for modifier changes during drag
+    const onKeyDown = (e) => {
+      if (!draggingRef.current) return;
+      const next = !!(e.ctrlKey || e.metaKey);
+      if (copyModeRef.current !== next) {
+        copyModeRef.current = next;
+        applyCursor();
+      }
+    };
+    const onKeyUp = (e) => {
+      if (!draggingRef.current) return;
+      const next = !!(e.ctrlKey || e.metaKey);
+      if (copyModeRef.current !== next) {
+        copyModeRef.current = next;
+        applyCursor();
+      }
+    };
+    const onBlur = () => {
+      if (!draggingRef.current) return;
+      copyModeRef.current = false;
+      applyCursor();
+    };
+
+    // Store handlers on ref so we can remove them later
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    // Save cleanup on the ref itself
+    handleDragStart._cleanup = () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  };
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
+    const isCopy = copyModeRef.current;
+    copyModeRef.current = false;
+    draggingRef.current = false;
+    setCopyMode(false);
+    try { document.body.style.cursor = ''; } catch {}
+    if (typeof handleDragStart._cleanup === 'function') {
+      try { handleDragStart._cleanup(); } catch {}
+      handleDragStart._cleanup = null;
+    }
+    if (!over || active.id === over.id) return;
+    if (isCopy) {
+      onCopy({ active, over });
+    } else {
       onMove({ active, over });
     }
   };
 
+  const handleDragCancel = () => {
+    copyModeRef.current = false;
+    draggingRef.current = false;
+    setCopyMode(false);
+    try { document.body.style.cursor = ''; } catch {}
+    if (typeof handleDragStart._cleanup === 'function') {
+      try { handleDragStart._cleanup(); } catch {}
+      handleDragStart._cleanup = null;
+    }
+  };
+
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={flattenedTree.map(n => n.id)} strategy={verticalListSortingStrategy}>
-        {flattenedTree.map(node => (
-          <SortableNode
-            key={node.id}
-            node={node}
-            depth={node.depth}
-            effective={effective.get(node.id)}
-            isSelected={node.id === selectedId}
-            isOpen={!!openNodes[node.id]}
-            onSelect={() => setSelectedId(node.id)}
-            onToggle={() => setOpenNodes(prev => ({ ...prev, [node.id]: !prev[node.id] }))}
-            reload={reload}
-            byId={byId}
-            onSetStatus={onSetStatus}
-            onAddTag={onAddTag}
-            whenCount={whenCounts.get(node.id) || 0}
-          />
-        ))}
-      </SortableContext>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+      <div style={{ cursor: copyMode ? 'copy' : undefined }}>
+        <SortableContext items={flattenedTree.map(n => n.id)} strategy={verticalListSortingStrategy}>
+          {flattenedTree.map(node => (
+            <SortableNode
+              key={node.id}
+              node={node}
+              depth={node.depth}
+              effective={effective.get(node.id)}
+              isSelected={node.id === selectedId}
+              isOpen={!!openNodes[node.id]}
+              onSelect={() => setSelectedId(node.id)}
+              onToggle={() => setOpenNodes(prev => ({ ...prev, [node.id]: !prev[node.id] }))}
+              reload={reload}
+              byId={byId}
+              onSetStatus={onSetStatus}
+              onAddTag={onAddTag}
+              whenCount={whenCounts.get(node.id) || 0}
+            />
+          ))}
+        </SortableContext>
+      </div>
     </DndContext>
   );
 }

@@ -322,6 +322,169 @@ app.get("/nodes/:id/counts", (req, res) => {
   res.json({ leaf_when_count: getLeafWhenCount(id) });
 });
 
+// Helper utilities for copy/merge -------------------------------------------------
+function getChildren(parentId) {
+  return db.prepare("SELECT * FROM node WHERE parent_id IS ? ORDER BY sort, id").all(parentId ?? null);
+}
+
+function getChildByTitle(parentId, title) {
+  return db
+    .prepare("SELECT * FROM node WHERE parent_id IS ? AND title = ? LIMIT 1")
+    .get(parentId ?? null, title);
+}
+
+function getNodeType(id) {
+  const n = getNode(id);
+  return n?.type || null;
+}
+
+function getNodeTagsOps(nodeId) {
+  return db.prepare("SELECT tag, op FROM node_tag WHERE node_id = ?").all(nodeId);
+}
+
+// Compute next sort under a parent (append semantics)
+function nextSort(parentId) {
+  const row = db.prepare("SELECT COALESCE(MAX(sort), -1) AS m FROM node WHERE parent_id IS ?").get(parentId ?? null);
+  return row.m + 1;
+}
+
+// Insert a node copy under a parent, with optional after-sibling placement
+function insertNodeCopy({ source, destParentId, placeAfterSort }) {
+  // Determine sort: if placeAfterSort provided, use small epsilon; else append
+  let sortVal;
+  if (typeof placeAfterSort === 'number') {
+    sortVal = placeAfterSort + 0.5;
+  } else {
+    sortVal = nextSort(destParentId);
+  }
+  const stmt = db.prepare(`
+    INSERT INTO node (parent_id, type, title, description, sort, explicit_status)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const info = stmt.run(destParentId ?? null, source.type, source.title, source.description ?? null, sortVal, null);
+  const newId = info.lastInsertRowid;
+  // Duplicate tag ops
+  const ops = getNodeTagsOps(source.id);
+  const insTag = db.prepare("INSERT OR IGNORE INTO node_tag (node_id, tag, op) VALUES (?, ?, ?)");
+  for (const o of ops) insTag.run(newId, o.tag, o.op);
+  updateTimestampAndVersion(newId);
+  return { id: newId, sort: sortVal };
+}
+
+// Recursive copy with merge-by-title rule
+function copyOrMergeSubtree({ sourceId, destParentId, placeAfterId, createdRoots, mapping, merged, skipped }) {
+  const source = getNode(sourceId);
+  if (!source) return null;
+
+  // Enforce WHEN cannot have children: if dest parent is WHEN, we cannot insert anything under it
+  if (destParentId != null) {
+    const destType = getNodeType(destParentId);
+    if (destType === 'WHEN') {
+      skipped.push({ oldId: sourceId, reason: 'dest_parent_is_WHEN' });
+      return null;
+    }
+  }
+
+  // Merge-by-title: if a sibling exists with same title under destParentId, merge into it
+  const existing = getChildByTitle(destParentId ?? null, source.title);
+  if (existing) {
+    merged.push({ sourceOldId: sourceId, targetExistingId: existing.id });
+    // Recurse into children: attempt to merge/copy each child under existing.id
+    const kids = getChildren(sourceId);
+    let cursorSort = null;
+    for (const child of kids) {
+      const result = copyOrMergeSubtree({
+        sourceId: child.id,
+        destParentId: existing.id,
+        placeAfterId: null,
+        createdRoots,
+        mapping,
+        merged,
+        skipped
+      });
+      // For children we just append in order; no special sibling-of handling
+      if (result && result.createdId) {
+        cursorSort = getNode(result.createdId).sort; // track last sort if needed by deeper merges
+      }
+    }
+    return { mergedIntoId: existing.id };
+  }
+
+  // No existing: create a new node under destParentId
+  let afterSort = null;
+  if (placeAfterId != null) {
+    const afterNode = getNode(placeAfterId);
+    afterSort = afterNode ? afterNode.sort : null;
+  }
+  const inserted = insertNodeCopy({ source, destParentId, placeAfterSort: afterSort });
+  mapping[sourceId] = inserted.id;
+  if (!createdRoots.length) createdRoots.push(inserted.id); // first created becomes new_root_id
+
+  // Recurse children normally under the newly inserted node
+  const kids = getChildren(sourceId);
+  let lastSortId = null;
+  for (const child of kids) {
+    const r = copyOrMergeSubtree({
+      sourceId: child.id,
+      destParentId: inserted.id,
+      placeAfterId: lastSortId,
+      createdRoots,
+      mapping,
+      merged,
+      skipped
+    });
+    if (r && r.createdId) lastSortId = r.createdId;
+  }
+  return { createdId: inserted.id };
+}
+
+// Copy/merge endpoint
+app.post('/nodes/:id/copy', (req, res) => {
+  const sourceId = Number(req.params.id);
+  const src = getNode(sourceId);
+  if (!src) return res.status(404).json({ error: 'Not found' });
+
+  const {
+    target_parent_id = null,
+    sibling_of = null,
+    include_subtree = true,
+    reset_explicit_to_inherit = true,
+    skip_duplicates = true,
+  } = req.body || {};
+
+  // Validate sibling_of, and that sibling_of has same parent as target_parent_id if both given
+  if (sibling_of != null) {
+    const sib = getNode(Number(sibling_of));
+    if (!sib) return res.status(400).json({ error: 'sibling_of not found' });
+    const parentOk = (sib.parent_id ?? null) === (target_parent_id ?? null);
+    if (!parentOk) return res.status(400).json({ error: 'sibling_of must be under target_parent_id' });
+  }
+
+  const createdRoots = [];
+  const mapping = {};
+  const merged = [];
+  const skipped = [];
+
+  const tx = db.transaction(() => {
+    // For this version: include_subtree is always true and reset_explicit_to_inherit is always true
+    // skip_duplicates triggers merge-by-title behavior
+    const result = copyOrMergeSubtree({
+      sourceId,
+      destParentId: target_parent_id ?? null,
+      placeAfterId: sibling_of ?? null,
+      createdRoots,
+      mapping,
+      merged,
+      skipped
+    });
+    return result;
+  });
+
+  tx();
+  const new_root_id = createdRoots[0] || (merged.length ? merged[0].targetExistingId : null);
+  res.json({ new_root_id, created_roots: createdRoots, mapping, merged, skipped });
+});
+
 // ----------------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
