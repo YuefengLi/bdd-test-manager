@@ -170,8 +170,9 @@ export default function DndKitTestTree() {
     const matchByStatus = () => {
       const raw = (filterStatus || "").trim();
       if (!raw) return null;
+      // IMPORTANT: statuses may contain spaces (e.g., "to do"), so split ONLY by commas
       const tokens = raw
-        .split(/[\,\s]+/)
+        .split(",")
         .map(t => t.trim().toLowerCase())
         .filter(Boolean);
       if (tokens.length === 0) return null;
@@ -380,7 +381,8 @@ const STATUS_OPTIONS = [
 function Toolbar({ onNew, selectedId, byId, roots, setOpenNodes, effective, filterTag, setFilterTag, filterStatus, setFilterStatus }) {
   const statusValues = useMemo(() =>
     (filterStatus || "")
-      .split(/[\,\s]+/)
+      // Split ONLY by commas to preserve multi-word statuses like "to do"
+      .split(",")
       .map(s => s.trim().toLowerCase())
       .filter(Boolean)
   , [filterStatus]);
