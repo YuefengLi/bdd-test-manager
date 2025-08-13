@@ -251,6 +251,7 @@ export default function DndKitTestTree() {
         removeEffectiveTagHere={removeEffectiveTagHere}
         reload={reload}
         setSelectedId={setSelectedId}
+        byId={byId}
       />
     </div>
   );
@@ -711,7 +712,7 @@ function TagAdder({ onAdd }) {
   );
 }
 
-function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveTagHere, reload, setSelectedId }) {
+function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveTagHere, reload, setSelectedId, byId }) {
   const [newTag, setNewTag] = useState("");
 
   if (!node) {
@@ -735,10 +736,62 @@ function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveT
     await reload();
   };
 
+  // Build statement lines from ancestor GIVEN nodes (one per line) and the current WHEN node (one line).
+  // Ignore any WHEN_GROUP titles. Only show when the selected node is a WHEN.
+  const buildStatementLines = () => {
+    if (!node || node.type !== 'WHEN' || !byId) return null;
+    const givens = [];
+    let cur = node;
+    // Traverse ancestors to collect GIVEN titles
+    while (cur && cur.parent_id) {
+      const p = byId.get(cur.parent_id);
+      if (!p) break;
+      if (p.type === 'GIVEN') {
+        // Strip leading keyword if present for cleaner output
+        const t = String(p.title || '').replace(/^\s*GIVEN\s*/i, '').trim();
+        givens.push(t || String(p.title || ''));
+      }
+      // Explicitly ignore WHEN_GROUP nodes (do not collect their titles)
+      cur = p;
+    }
+    // Ancestors were collected from child up; reverse to top-down order
+    givens.reverse();
+    const whenText = String(node.title || '').replace(/^\s*WHEN\s*/i, '').trim() || String(node.title || '');
+    const lines = [
+      ...givens.map(g => ({ type: 'GIVEN', text: g })),
+      { type: 'WHEN', text: whenText },
+    ];
+    return lines;
+  };
+  const statementLines = buildStatementLines();
+
   return (
     <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, background: "#f9f9f9" }}>
       <h3 style={{ marginTop: 0 }}>{node.title}</h3>
       <p>ID: {node.id}, v{node.version}</p>
+      {statementLines && (
+        <div style={{ margin: '12px 0', padding: '8px 10px', background: '#fff', border: '1px solid #eee', borderRadius: 8 }}>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>scenario</div>
+          <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {statementLines.map((ln, idx) => {
+              const color = ln.type === 'GIVEN' ? '#1c7ed6' : ln.type === 'WHEN' ? '#f08c00' : '#495057';
+              return (
+                <div key={idx}>
+                  <span style={{
+                    fontWeight: 700,
+                    color,
+                    marginRight: 6,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.3,
+                    fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"'
+                  }}>{ln.type}</span>
+                  <span>{ln.text}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: "block", marginBottom: 4, fontWeight: "bold" }}>Status</label>
         <select value={node.explicit_status ?? ""} onChange={(e) => onSetStatus(node, e.target.value || null)} style={{ width: "100%", padding: 8, borderRadius: 4, border: "1px solid #ccc" }}>
