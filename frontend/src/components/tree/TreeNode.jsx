@@ -4,7 +4,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import NodeRow from './NodeRow';
 
-export default function TreeNode({ node, depth, effective, isSelected, isOpen, onSelect, onToggle, reload, byId, onSetStatus, onAddTag, whenCount }) {
+export default function TreeNode({ node, depth, effective, isSelected, isOpen, onSelect, onToggle, reload, byId, onSetStatus, onAddTag, whenChildrenCount }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: node.id });
 
   const style = {
@@ -34,7 +34,7 @@ export default function TreeNode({ node, depth, effective, isSelected, isOpen, o
         byId={byId}
         onSetStatus={onSetStatus}
         onAddTag={onAddTag}
-        whenCount={whenCount}
+        whenChildrenCount={whenChildrenCount}
       />
     </div>
   );

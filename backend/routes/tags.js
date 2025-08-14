@@ -2,10 +2,18 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { getNode, updateTimestampAndVersion } from '../models/node.js';
-import { replaceNodeTags, addNodeTag, removeNodeTag, getEffectiveTags } from '../models/nodeTag.js';
+import { replaceNodeTags, addNodeTag, removeNodeTag, getEffectiveTags, getNodeTagsOps } from '../models/nodeTag.js';
 import { getEffectiveStatus } from '../services/nodeService.js';
 
 const router = Router();
+
+// Return local tag operations for a node (adds/removes)
+router.get('/nodes/:id/tags', (req, res) => {
+  const id = Number(req.params.id);
+  if (!getNode(id)) return res.status(404).json({ error: 'Not found' });
+  const ops = getNodeTagsOps(id);
+  res.json({ ops });
+});
 
 router.put('/nodes/:id/tags', (req, res) => {
   const id = Number(req.params.id);

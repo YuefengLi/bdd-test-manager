@@ -14,7 +14,7 @@ export default function Toolbar({ onNew, selectedId, byId, roots, setOpenNodes, 
   );
 
   const createNode = async (type) => {
-    const defaultTitle = type === 'GIVEN' ? 'New GIVEN' : type === 'WHEN_GROUP' ? 'New WHEN GROUP' : 'New WHEN';
+    const defaultTitle = type === 'GIVEN' ? 'New GIVEN' : type === 'WHEN_GROUP' ? 'New GROUP' : 'New WHEN';
     // Attach to current selection if any; otherwise, attach to the seeded root (id=1)
     const parent_id = selectedId ?? 1;
     try {
@@ -87,7 +87,7 @@ export default function Toolbar({ onNew, selectedId, byId, roots, setOpenNodes, 
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <button onClick={() => createNode('GIVEN')}>New Given</button>
       <button onClick={() => createNode('WHEN')}>New When</button>
-      <button onClick={() => createNode('WHEN_GROUP')}>New When Group</button>
+      <button onClick={() => createNode('WHEN_GROUP')}>New Group</button>
       <button onClick={expandAll} title="Expand selected subtree (or all if none selected)">Expand All</button>
       <button onClick={collapseAll} title="Collapse selected subtree (or all if none selected)">Collapse All</button>
       <button onClick={collapseCancelled} title="Collapse all nodes with effective status 'cancelled'">Collapse Cancelled</button>

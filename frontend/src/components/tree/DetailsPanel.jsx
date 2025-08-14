@@ -1,5 +1,5 @@
 // frontend/src/components/tree/DetailsPanel.jsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { STATUS_OPTIONS } from '../../constants';
 import StatusPill from './parts/StatusPill';
 import Tag from './parts/Tag';
@@ -7,6 +7,35 @@ import { api } from '../../api/client';
 
 export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveTagHere, reload, setSelectedId, byId }) {
   const [newTag, setNewTag] = useState("");
+  const [localAdds, setLocalAdds] = useState([]);
+  const popularTags = ['negative', 'swc'];
+  const removeLocalAdd = async (tag) => {
+    if (!node || !tag) return;
+    await api(`/nodes/${node.id}/tags`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tag, op: 'add', action: 'delete' })
+    });
+    await reload();
+  };
+
+  // Load local tag ops when selection changes
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      if (!node) { setLocalAdds([]); return; }
+      try {
+        const res = await api(`/nodes/${node.id}/tags`, { method: 'GET' });
+        if (ignore) return;
+        const adds = Array.isArray(res?.ops) ? res.ops.filter(o => o.op === 'add').map(o => o.tag) : [];
+        setLocalAdds(adds);
+      } catch (e) {
+        console.error('Failed to load local tags', e);
+        if (!ignore) setLocalAdds([]);
+      }
+    }
+    load();
+    return () => { ignore = true; };
+  }, [node?.id, effective]);
 
   if (!node) {
     return (
@@ -63,9 +92,9 @@ export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, r
       <h3 style={{ marginTop: 0 }}>{node.title}</h3>
       <p>ID: {node.id}, v{node.version}</p>
       {statementLines && (
-        <div style={{ margin: '12px 0', padding: '8px 10px', background: '#fff', border: '1px solid #eee', borderRadius: 8 }}>
-          <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>scenario</div>
-          <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ margin: '12px 0', padding: '8px 10px', background: '#fff', border: '1px solid #eee', borderRadius: 8, textAlign: 'left' }}>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 4, textAlign: 'left' }}>scenario</div>
+          <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left' }}>
             {statementLines.map((ln, idx) => {
               const color = ln.type === 'GIVEN' ? '#1c7ed6' : ln.type === 'WHEN' ? '#f08c00' : '#495057';
               return (
@@ -96,11 +125,36 @@ export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, r
         <label style={{ display: "block", marginBottom: 4, fontWeight: "bold" }}>Tags</label>
         <div style={{ fontSize: 12, color: "#666" }}>Local Tags</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-          {(node.tags || []).map(t => <Tag key={t} text={t} isLocal />)}
+          {localAdds.map(t => (
+            <Tag key={t} text={t} isLocal onRemove={() => removeLocalAdd(t)} />
+          ))}
         </div>
         <div style={{ fontSize: 12, color: "#666", marginTop: 12 }}>Effective Tags</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
           {(effective?.tags || []).map(t => <Tag key={t} text={t} onRemove={() => removeEffectiveTagHere(node, t)} />)}
+        </div>
+        {/* Quick-add popular tags */}
+        <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {popularTags.map(t => {
+            const disabled = localAdds.includes(t);
+            return (
+              <button
+                key={t}
+                onClick={() => onAddTag(node, t)}
+                disabled={disabled}
+                title={disabled ? 'Already added locally' : `Add '${t}' locally`}
+                style={{
+                  fontSize: 11,
+                  padding: '2px 8px',
+                  borderRadius: 12,
+                  border: '1px solid #ccc',
+                  background: disabled ? '#f1f3f5' : '#fff',
+                  color: '#495057',
+                  cursor: disabled ? 'not-allowed' : 'pointer'
+                }}
+              >+ {t}</button>
+            );
+          })}
         </div>
         <div style={{ marginTop: 6 }}>
           <form onSubmit={e => { e.preventDefault(); onAddTag(node, newTag); setNewTag(""); }}>

@@ -96,25 +96,54 @@ export default function DndKitTestTree() {
   const onCopy = async ({ active, over }) => {
     if (!active || !over || active.id === over.id) return;
     const activeNode = byId.get(active.id);
-    const overNode = byId.get(over.id);
-    if (!activeNode || !overNode) return;
+    if (!activeNode) return;
 
-    const target_parent_id = overNode.parent_id ?? null;
+    const isGap = typeof over.id === 'string' && over.id.startsWith('gap-');
+    let target_parent_id = null;
+    let placeAfterId = null; // maps to backend sibling_of (placeAfterId)
+
+    if (isGap) {
+      const [_, pos, strId] = over.id.split('-'); // gap-before-<id> or gap-after-<id>
+      const refId = Number(strId);
+      const ref = byId.get(refId);
+      if (!ref) return;
+      target_parent_id = ref.parent_id ?? null;
+      if (pos === 'after') {
+        placeAfterId = ref.id; // insert after ref
+      } else {
+        // insert before ref: find previous sibling under same parent by sort
+        const siblings = [...byId.values()].filter(n => (n.parent_id ?? null) === (target_parent_id ?? null)).sort((a,b)=>a.sort-b.sort);
+        const idx = siblings.findIndex(n => n.id === ref.id);
+        placeAfterId = idx > 0 ? siblings[idx - 1].id : null; // null -> at beginning
+      }
+    } else {
+      // Dropped on a node => make child of that node, append at end
+      const overNode = byId.get(over.id);
+      if (!overNode) return;
+      if (overNode.type === 'WHEN') {
+        // WHEN cannot have children: insert after as sibling
+        target_parent_id = overNode.parent_id ?? null;
+        placeAfterId = overNode.id;
+      } else {
+        target_parent_id = overNode.id;
+        const children = [...byId.values()].filter(n => (n.parent_id ?? null) === overNode.id).sort((a,b)=>a.sort-b.sort);
+        placeAfterId = children.length ? children[children.length - 1].id : null;
+      }
+    }
+
     try {
       const res = await api(`/nodes/${active.id}/copy`, {
         method: 'POST',
         body: JSON.stringify({
           target_parent_id,
-          sibling_of: overNode.id,
+          sibling_of: placeAfterId,
           include_subtree: true,
           reset_explicit_to_inherit: true,
           skip_duplicates: true,
         })
       });
       await reload();
-      if (target_parent_id != null) {
-        setOpenNodes(prev => ({ ...prev, [target_parent_id]: true }));
-      }
+      if (target_parent_id != null) setOpenNodes(prev => ({ ...prev, [target_parent_id]: true }));
       const selectId = res?.new_root_id ?? null;
       if (selectId) {
         setSelectedId(selectId);
@@ -149,18 +178,55 @@ export default function DndKitTestTree() {
     if (!active || !over || active.id === over.id) return;
 
     const activeNode = byId.get(active.id);
-    const overNode = byId.get(over.id);
-    if (!activeNode || !overNode) return;
+    if (!activeNode) return;
 
-    // Simple re-parenting logic. More complex logic would be needed for sorting.
-    const newParentId = overNode.parent_id;
-    const newSort = overNode.sort + 0.5; // simplistic sort update
+    const isGap = typeof over.id === 'string' && over.id.startsWith('gap-');
+    let newParentId = null;
+    let newSort = 0;
+
+    if (isGap) {
+      const [_, pos, strId] = over.id.split('-');
+      const refId = Number(strId);
+      const ref = byId.get(refId);
+      if (!ref) return;
+      newParentId = ref.parent_id ?? null;
+      if (pos === 'after') {
+        // after ref: between ref.sort and next sibling
+        const siblings = [...byId.values()].filter(n => (n.parent_id ?? null) === (newParentId ?? null)).sort((a,b)=>a.sort-b.sort);
+        const idx = siblings.findIndex(n => n.id === ref.id);
+        const next = idx >= 0 && idx + 1 < siblings.length ? siblings[idx + 1] : null;
+        newSort = next ? (ref.sort + next.sort) / 2 : ref.sort + 1;
+      } else {
+        // before ref
+        const siblings = [...byId.values()].filter(n => (n.parent_id ?? null) === (newParentId ?? null)).sort((a,b)=>a.sort-b.sort);
+        const idx = siblings.findIndex(n => n.id === ref.id);
+        const prev = idx > 0 ? siblings[idx - 1] : null;
+        newSort = prev ? (prev.sort + ref.sort) / 2 : ref.sort - 1;
+      }
+    } else {
+      // Dropped on node => make child, append at end
+      const overNode = byId.get(over.id);
+      if (!overNode) return;
+      if (overNode.type === 'WHEN') {
+        // WHEN cannot have children: insert after as sibling
+        newParentId = overNode.parent_id ?? null;
+        const siblings = [...byId.values()].filter(n => (n.parent_id ?? null) === (newParentId ?? null)).sort((a,b)=>a.sort-b.sort);
+        const idx = siblings.findIndex(n => n.id === overNode.id);
+        const next = idx >= 0 && idx + 1 < siblings.length ? siblings[idx + 1] : null;
+        newSort = next ? (overNode.sort + next.sort) / 2 : overNode.sort + 1;
+      } else {
+        newParentId = overNode.id;
+        const children = [...byId.values()].filter(n => (n.parent_id ?? null) === overNode.id).sort((a,b)=>a.sort-b.sort);
+        newSort = children.length ? children[children.length - 1].sort + 1 : 0;
+      }
+    }
 
     await api(`/nodes/${active.id}`, {
       method: "PATCH",
       body: JSON.stringify({ parent_id: newParentId, sort: newSort })
     });
     await reload();
+    if (newParentId != null) setOpenNodes(prev => ({ ...prev, [newParentId]: true }));
   };
 
   const selected = selectedId ? byId.get(selectedId) : null;
