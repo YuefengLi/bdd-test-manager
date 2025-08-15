@@ -24,6 +24,8 @@ export default function DndKitTestTree() {
   const [openNodes, setOpenNodes] = useState({});
   const [filterTag, setFilterTag] = useState(""); // comma or space separated list of tags
   const [filterStatus, setFilterStatus] = useState(""); // comma or space separated list of statuses
+  const [hideCancelled, setHideCancelled] = useState(false);
+  const [showOnlyToDo, setShowOnlyToDo] = useState(false);
   const [highlightedId, setHighlightedId] = useState(null);
   const highlightTimerRef = useRef(null);
 
@@ -232,7 +234,7 @@ export default function DndKitTestTree() {
   };
 
   const selected = selectedId ? byId.get(selectedId) : null;
-  const visibleIds = useVisibleIds(effective, byId, filterTag, filterStatus);
+  const visibleIds = useVisibleIds(effective, byId, filterTag, filterStatus, { hideCancelled, showOnlyToDo });
 
   // Navigate to a node id: expand all ancestors and select it
   const navigateToNode = (targetId) => {
@@ -277,6 +279,10 @@ export default function DndKitTestTree() {
           setFilterTag={setFilterTag}
           filterStatus={filterStatus}
           setFilterStatus={setFilterStatus}
+          hideCancelled={hideCancelled}
+          setHideCancelled={setHideCancelled}
+          showOnlyToDo={showOnlyToDo}
+          setShowOnlyToDo={setShowOnlyToDo}
         />
         <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, marginTop: 12 }}>
           <ErrorBoundary>

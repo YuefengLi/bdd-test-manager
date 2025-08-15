@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { STATUS_OPTIONS } from '../../constants';
 import { api } from '../../api/client';
 
-export default function Toolbar({ onNew, selectedId, byId, roots, setOpenNodes, effective, filterTag, setFilterTag, filterStatus, setFilterStatus }) {
+export default function Toolbar({ onNew, selectedId, byId, roots, setOpenNodes, effective, filterTag, setFilterTag, filterStatus, setFilterStatus, hideCancelled, setHideCancelled, showOnlyToDo, setShowOnlyToDo }) {
   const statusValues = useMemo(
     () => (filterStatus || '')
       // Split ONLY by commas to preserve multi-word statuses like "to do"
@@ -84,13 +84,35 @@ export default function Toolbar({ onNew, selectedId, byId, roots, setOpenNodes, 
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <button onClick={() => createNode('GIVEN')}>New Given</button>
-      <button onClick={() => createNode('WHEN')}>New When</button>
-      <button onClick={() => createNode('WHEN_GROUP')}>New Group</button>
-      <button onClick={expandAll} title="Expand selected subtree (or all if none selected)">Expand All</button>
-      <button onClick={collapseAll} title="Collapse selected subtree (or all if none selected)">Collapse All</button>
-      <button onClick={collapseCancelled} title="Collapse all nodes with effective status 'cancelled'">Collapse Cancelled</button>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => createNode('GIVEN')}>➕ New Given</button>
+          <button onClick={() => createNode('WHEN')}>➕ New When</button>
+          <button onClick={() => createNode('WHEN_GROUP')}>➕ New Group</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={expandAll} title="Expand selected subtree (or all if none selected)">⬇️ Expand All</button>
+          <button onClick={collapseAll} title="Collapse selected subtree (or all if none selected)">⬆️ Collapse All</button>
+          <button onClick={collapseCancelled} title="Collapse all nodes with effective status 'cancelled'">🚫 Collapse Cancelled</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setHideCancelled(v => !v)}
+            title="Hide all cancelled nodes (and their subtrees)"
+            style={{ background: hideCancelled ? '#ffd9d9' : undefined }}
+          >
+            {hideCancelled ? '🙈 Cancelled Hidden' : '🙈 Hide Cancelled'}
+          </button>
+          <button
+            onClick={() => setShowOnlyToDo(v => !v)}
+            title="Show only WHEN nodes with status 'to do' (and their ancestors)"
+            style={{ background: showOnlyToDo ? '#d9ffe2' : undefined }}
+          >
+            {showOnlyToDo ? '✅ Only To Do' : '✅ Show Only To Do'}
+          </button>
+        </div>
+      </div>
       <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         <input
           value={filterTag}
