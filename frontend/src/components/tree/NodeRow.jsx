@@ -4,7 +4,7 @@ import StatusPill from './parts/StatusPill';
 import StatusSelect from './parts/StatusSelect';
 import { api } from '../../api/client';
 
-export default function NodeRow({ node, dragHandle, effective, isSelected, isOpen, onSelect, onToggle, reload, byId, onSetStatus, onAddTag, whenChildrenCount }) {
+export default function NodeRow({ node, dragHandle, effective, isSelected, isOpen, onSelect, onToggle, reload, refreshNode, byId, onSetStatus, onAddTag, whenChildrenCount }) {
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(node.title);
   useEffect(() => setTitle(node.title), [node.title]);
@@ -24,7 +24,8 @@ export default function NodeRow({ node, dragHandle, effective, isSelected, isOpe
       method: 'PATCH',
       body: JSON.stringify({ title: newTitle })
     });
-    await reload();
+    // Partial refresh only this node and ancestor effective
+    await (refreshNode ? refreshNode(node.id) : reload());
   };
 
   return (

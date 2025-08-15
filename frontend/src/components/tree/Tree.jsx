@@ -6,7 +6,7 @@ import TreeNode from './TreeNode';
 import { useDragCopyMode } from '../../hooks/useDragCopyMode';
 import DropGap from './DropGap';
 
-export default function Tree({ nodes, byId, effective, visibleIds, selectedId, openNodes, setSelectedId, setOpenNodes, onMove, onCopy, reload, onSetStatus, onAddTag, highlightedId }) {
+export default function Tree({ nodes, byId, effective, visibleIds, selectedId, openNodes, setSelectedId, setOpenNodes, onMove, onCopy, reload, refreshNode, onSetStatus, onAddTag, highlightedId }) {
   const sensors = useSensors(useSensor(PointerSensor));
   const { copyMode, onDragStart, onDragEnd, onDragCancel } = useDragCopyMode();
 
@@ -79,6 +79,7 @@ export default function Tree({ nodes, byId, effective, visibleIds, selectedId, o
                 onSelect={() => setSelectedId(node.id)}
                 onToggle={() => setOpenNodes(prev => ({ ...prev, [node.id]: !prev[node.id] }))}
                 reload={reload}
+                refreshNode={refreshNode}
                 byId={byId}
                 onSetStatus={onSetStatus}
                 onAddTag={onAddTag}

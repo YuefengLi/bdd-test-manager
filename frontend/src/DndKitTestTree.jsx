@@ -50,6 +50,49 @@ export default function DndKitTestTree() {
     }
   };
 
+  // Partial refresh: update a single node and all ancestors' effective data
+  const refreshNode = async (id) => {
+    if (!id) return reload(); // fallback
+    try {
+      // fetch the changed node object
+      const updatedNode = await api(`/nodes/${id}`);
+      // collect ancestors including self using current byId snapshot
+      const ancestorIds = [];
+      let cur = byId.get(Number(id));
+      while (cur) {
+        ancestorIds.push(cur.id);
+        if (cur.parent_id == null) break;
+        cur = byId.get(cur.parent_id);
+      }
+      // fetch effective for self + ancestors
+      const effs = await Promise.all(
+        ancestorIds.map(async (nid) => {
+          const eff = await api(`/nodes/${nid}/effective`);
+          return { id: nid, ...eff };
+        })
+      );
+
+      // merge into existing arrays to avoid full reload
+      setData(prev => {
+        if (!prev) return prev;
+        // nodes
+        const nodes = prev.nodes ? [...prev.nodes] : [];
+        const idx = nodes.findIndex(n => n.id === updatedNode.id);
+        if (idx >= 0) nodes[idx] = { ...nodes[idx], ...updatedNode };
+        // effective
+        const effective = prev.effective ? [...prev.effective] : [];
+        for (const e of effs) {
+          const ei = effective.findIndex(x => x.id === e.id);
+          if (ei >= 0) effective[ei] = e; else effective.push(e);
+        }
+        return { nodes, effective };
+      });
+    } catch (err) {
+      console.error('refreshNode failed; falling back to full reload', err);
+      await reload();
+    }
+  };
+
   useEffect(() => {
     reload();
   }, []);
@@ -94,7 +137,7 @@ export default function DndKitTestTree() {
       method: "PATCH",
       body: JSON.stringify({ explicit_status })
     });
-    await reload();
+    await refreshNode(node.id);
   };
 
   const onCopy = async ({ active, over }) => {
@@ -166,7 +209,7 @@ export default function DndKitTestTree() {
       method: "PATCH",
       body: JSON.stringify({ tag: tagText, op: "add", action: "add" })
     });
-    await reload();
+    await refreshNode(node.id);
   };
 
   const removeEffectiveTagHere = async (node, tagText) => {
@@ -175,7 +218,7 @@ export default function DndKitTestTree() {
       method: "PATCH",
       body: JSON.stringify({ tag: tagText, op: "remove", action: "add" })
     });
-    await reload();
+    await refreshNode(node.id);
   };
 
   const onMove = async ({ active, over }) => {
@@ -298,6 +341,7 @@ export default function DndKitTestTree() {
               onMove={onMove}
               onCopy={onCopy}
               reload={reload}
+              refreshNode={refreshNode}
               onSetStatus={onSetStatus}
               onAddTag={onAddTag}
               highlightedId={highlightedId}
@@ -315,6 +359,7 @@ export default function DndKitTestTree() {
         setSelectedId={setSelectedId}
         byId={byId}
         navigateToNode={navigateToNode}
+        refreshNode={refreshNode}
       />
     </div>
   );

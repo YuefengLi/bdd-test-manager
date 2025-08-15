@@ -5,7 +5,7 @@ import StatusPill from './parts/StatusPill';
 import Tag from './parts/Tag';
 import { api } from '../../api/client';
 
-export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveTagHere, reload, setSelectedId, byId, navigateToNode }) {
+export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveTagHere, reload, setSelectedId, byId, navigateToNode, refreshNode }) {
   const [newTag, setNewTag] = useState("");
   const [localAdds, setLocalAdds] = useState([]);
   const popularTags = ['negative', 'swc'];
@@ -19,7 +19,7 @@ export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, r
       method: 'PATCH',
       body: JSON.stringify({ tag, op: 'add', action: 'delete' })
     });
-    await reload();
+    await (refreshNode ? refreshNode(node.id) : reload());
   };
 
   // Load local tag ops when selection changes
@@ -61,7 +61,7 @@ export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, r
         method: 'PATCH',
         body: JSON.stringify({ note, version: node.version })
       });
-      await reload();
+      await (refreshNode ? refreshNode(node.id) : reload());
     } catch (e) {
       console.error('Failed to save note', e);
       setNoteError('Failed to save. Try again.');
