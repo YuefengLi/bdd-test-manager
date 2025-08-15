@@ -3,7 +3,7 @@
  * Tree visualization component using dnd-kit for a stable, custom implementation.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 import { ErrorBoundary } from './ErrorBoundary';
 import { api } from './api/client';
@@ -24,6 +24,8 @@ export default function DndKitTestTree() {
   const [openNodes, setOpenNodes] = useState({});
   const [filterTag, setFilterTag] = useState(""); // comma or space separated list of tags
   const [filterStatus, setFilterStatus] = useState(""); // comma or space separated list of statuses
+  const [highlightedId, setHighlightedId] = useState(null);
+  const highlightTimerRef = useRef(null);
 
   const reload = async () => {
     try {
@@ -232,6 +234,31 @@ export default function DndKitTestTree() {
   const selected = selectedId ? byId.get(selectedId) : null;
   const visibleIds = useVisibleIds(effective, byId, filterTag, filterStatus);
 
+  // Navigate to a node id: expand all ancestors and select it
+  const navigateToNode = (targetId) => {
+    const target = byId.get(Number(targetId));
+    if (!target) return;
+    const toOpen = {};
+    let cur = target;
+    while (cur) {
+      if (cur.parent_id != null) {
+        toOpen[cur.parent_id] = true;
+        cur = byId.get(cur.parent_id);
+      } else {
+        break;
+      }
+    }
+    if (Object.keys(toOpen).length) {
+      setOpenNodes(prev => ({ ...prev, ...toOpen }));
+    }
+    // transient highlight
+    setHighlightedId(target.id);
+    window.clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedId(null);
+    }, 1500);
+  };
+
   if (error) return <div style={{ color: 'red' }}>Error: {error.message}</div>;
   if (loading) return <div>Loading...</div>;
   if (!data) return <div>No data</div>;
@@ -239,9 +266,18 @@ export default function DndKitTestTree() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, padding: 16, fontFamily: 'sans-serif' }}>
       <div>
-        <Toolbar onNew={reload} selectedId={selectedId} byId={byId} roots={roots} setOpenNodes={setOpenNodes} effective={effective}
-                 filterTag={filterTag} setFilterTag={setFilterTag}
-                 filterStatus={filterStatus} setFilterStatus={setFilterStatus} />
+        <Toolbar
+          onNew={reload}
+          selectedId={selectedId}
+          byId={byId}
+          roots={roots}
+          setOpenNodes={setOpenNodes}
+          effective={effective}
+          filterTag={filterTag}
+          setFilterTag={setFilterTag}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+        />
         <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, marginTop: 12 }}>
           <ErrorBoundary>
             <Tree
@@ -258,6 +294,7 @@ export default function DndKitTestTree() {
               reload={reload}
               onSetStatus={onSetStatus}
               onAddTag={onAddTag}
+              highlightedId={highlightedId}
             />
           </ErrorBoundary>
         </div>
@@ -271,6 +308,7 @@ export default function DndKitTestTree() {
         reload={reload}
         setSelectedId={setSelectedId}
         byId={byId}
+        navigateToNode={navigateToNode}
       />
     </div>
   );

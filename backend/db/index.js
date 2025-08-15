@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS node (
   type            TEXT NOT NULL CHECK (type IN ('GIVEN','WHEN_GROUP','WHEN')),
   title           TEXT NOT NULL,
   description     TEXT,
+  note            TEXT,
   sort            INTEGER NOT NULL DEFAULT 0,
   explicit_status TEXT CHECK (explicit_status IN ('to do','in progress','done','cancelled')),
   version         INTEGER NOT NULL DEFAULT 1,
@@ -62,6 +63,45 @@ try {
       `);
       db.exec('DROP TABLE node;');
       db.exec('ALTER TABLE node_mig RENAME TO node;');
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_node_parent ON node(parent_id);
+        CREATE INDEX IF NOT EXISTS idx_node_type   ON node(type);
+      `);
+    });
+    tx();
+  }
+} finally {
+  db.pragma('foreign_keys = ON');
+}
+
+// Lightweight migration to add 'note' column if missing
+try {
+  const tbl = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='node'").get();
+  const sql = tbl?.sql || '';
+  if (!sql.includes('\n  note            TEXT')) {
+    db.pragma('foreign_keys = OFF');
+    const tx = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS node_mig_note (
+          id              INTEGER PRIMARY KEY,
+          parent_id       INTEGER REFERENCES node_mig_note(id) ON DELETE CASCADE,
+          type            TEXT NOT NULL CHECK (type IN ('GIVEN','WHEN_GROUP','WHEN')),
+          title           TEXT NOT NULL,
+          description     TEXT,
+          note            TEXT,
+          sort            INTEGER NOT NULL DEFAULT 0,
+          explicit_status TEXT CHECK (explicit_status IN ('to do','in progress','done','cancelled')),
+          version         INTEGER NOT NULL DEFAULT 1,
+          created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+      db.exec(`
+        INSERT INTO node_mig_note (id, parent_id, type, title, description, note, sort, explicit_status, version, created_at, updated_at)
+        SELECT id, parent_id, type, title, description, NULL as note, sort, explicit_status, version, created_at, updated_at FROM node;
+      `);
+      db.exec('DROP TABLE node;');
+      db.exec('ALTER TABLE node_mig_note RENAME TO node;');
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_node_parent ON node(parent_id);
         CREATE INDEX IF NOT EXISTS idx_node_type   ON node(type);

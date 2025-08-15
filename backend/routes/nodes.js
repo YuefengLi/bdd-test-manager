@@ -28,7 +28,7 @@ router.get('/nodes/:id/effective', (req, res) => {
 });
 
 router.post('/nodes', (req, res) => {
-  const { parent_id = null, type, title, description = null, explicit_status = null, sort = null } = req.body || {};
+  const { parent_id = null, type, title, description = null, note = null, explicit_status = null, sort = null } = req.body || {};
   if (!['GIVEN', 'WHEN_GROUP', 'WHEN'].includes(type)) {
     return res.status(400).json({ error: 'type must be GIVEN | WHEN_GROUP | WHEN' });
   }
@@ -36,7 +36,7 @@ router.post('/nodes', (req, res) => {
   if (parent_id != null && !getNode(parent_id)) return res.status(400).json({ error: 'parent_id not found' });
 
   const tx = db.transaction(() => {
-    const id = createNode({ parent_id, type, title, description, explicit_status, sort });
+    const id = createNode({ parent_id, type, title, description, note, explicit_status, sort });
     return getNode(id);
   });
   const created = tx();
@@ -48,7 +48,7 @@ router.patch('/nodes/:id', (req, res) => {
   const node = getNode(id);
   if (!node) return res.status(404).json({ error: 'Not found' });
 
-  const { title, description, explicit_status, parent_id, sort, version } = req.body || {};
+  const { title, description, note, explicit_status, parent_id, sort, version } = req.body || {};
   if (version != null && version !== node.version) {
     return res.status(409).json({ error: 'version conflict', current: node.version });
   }
@@ -59,7 +59,7 @@ router.patch('/nodes/:id', (req, res) => {
   if (parent_id != null && !getNode(parent_id)) return res.status(400).json({ error: 'parent_id not found' });
 
   const tx = db.transaction(() => {
-    updateNode(id, { title, description, explicit_status, parent_id, sort });
+    updateNode(id, { title, description, note, explicit_status, parent_id, sort });
     // bump version
     db.prepare(`UPDATE node SET updated_at = datetime('now'), version = version + 1 WHERE id = ?`).run(id);
     return getNode(id);

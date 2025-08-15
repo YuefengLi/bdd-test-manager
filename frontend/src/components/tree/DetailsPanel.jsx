@@ -5,10 +5,14 @@ import StatusPill from './parts/StatusPill';
 import Tag from './parts/Tag';
 import { api } from '../../api/client';
 
-export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveTagHere, reload, setSelectedId, byId }) {
+export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, removeEffectiveTagHere, reload, setSelectedId, byId, navigateToNode }) {
   const [newTag, setNewTag] = useState("");
   const [localAdds, setLocalAdds] = useState([]);
   const popularTags = ['negative', 'swc'];
+  // Local note editor state
+  const [note, setNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState(null);
   const removeLocalAdd = async (tag) => {
     if (!node || !tag) return;
     await api(`/nodes/${node.id}/tags`, {
@@ -36,6 +40,64 @@ export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, r
     load();
     return () => { ignore = true; };
   }, [node?.id, effective]);
+
+  // Sync note from selected node
+  useEffect(() => {
+    if (node) {
+      setNote(node.note || '');
+      setNoteError(null);
+    } else {
+      setNote('');
+      setNoteError(null);
+    }
+  }, [node?.id, node?.note]);
+
+  const saveNote = async () => {
+    if (!node) return;
+    try {
+      setSavingNote(true);
+      setNoteError(null);
+      await api(`/nodes/${node.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ note, version: node.version })
+      });
+      await reload();
+    } catch (e) {
+      console.error('Failed to save note', e);
+      setNoteError('Failed to save. Try again.');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Render a simple preview that linkifies #<id>
+  const renderNotePreview = () => {
+    if (!note) return null;
+    const parts = String(note).split(/(#[0-9]+)/g);
+    return (
+      <div style={{ marginTop: 6, fontSize: 12, color: '#495057', textAlign: 'left', whiteSpace: 'pre-wrap' }}>
+        {parts.map((part, idx) => {
+          const m = /^#([0-9]+)$/.exec(part);
+          if (m) {
+            const id = Number(m[1]);
+            const exists = byId?.has(id);
+            return (
+              <a
+                key={idx}
+                href={`#${id}`}
+                onClick={(e) => { e.preventDefault(); if (exists && navigateToNode) navigateToNode(id); }}
+                style={{ color: exists ? '#1c7ed6' : '#adb5bd', textDecoration: exists ? 'underline' : 'line-through', cursor: exists ? 'pointer' : 'not-allowed' }}
+                title={exists ? `Go to node #${id}` : `Node #${id} not found`}
+              >
+                {part}
+              </a>
+            );
+          }
+          return <span key={idx}>{part}</span>;
+        })}
+      </div>
+    );
+  };
 
   if (!node) {
     return (
@@ -114,6 +176,23 @@ export default function DetailsPanel({ node, effective, onSetStatus, onAddTag, r
           </div>
         </div>
       )}
+      {/* Note editor */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>Note</label>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          onBlur={saveNote}
+          placeholder="Explain why this node is cancelled, estimate duration, etc."
+          rows={4}
+          style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', resize: 'vertical' }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 20, marginTop: 4 }}>
+          {savingNote && <span style={{ fontSize: 12, color: '#666' }}>Saving…</span>}
+          {noteError && <span style={{ fontSize: 12, color: '#e03131' }}>{noteError}</span>}
+        </div>
+      </div>
+      {renderNotePreview()}
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: "block", marginBottom: 4, fontWeight: "bold" }}>Status</label>
         <select value={node.explicit_status ?? ""} onChange={(e) => onSetStatus(node, e.target.value || null)} style={{ width: "100%", padding: 8, borderRadius: 4, border: "1px solid #ccc" }}>
