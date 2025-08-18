@@ -53,13 +53,14 @@ export default function DndKitTestTree() {
     }
   };
 
-  // Partial refresh: update a single node and all ancestors' effective data
+  // Partial refresh: update a single node, its ancestors, and its entire subtree's effective data
   const refreshNode = async (id) => {
     if (!id) return reload(); // fallback
     try {
-      // fetch the changed node object
+      // fetch the changed node object (structure may not change, but keep consistent)
       const updatedNode = await api(`/nodes/${id}`);
-      // collect ancestors including self using current byId snapshot
+
+      // Collect ancestors (including self)
       const ancestorIds = [];
       let cur = byId.get(Number(id));
       while (cur) {
@@ -67,12 +68,36 @@ export default function DndKitTestTree() {
         if (cur.parent_id == null) break;
         cur = byId.get(cur.parent_id);
       }
-      // fetch effective for self + ancestors (batched)
+
+      // Collect descendants (entire subtree under this node)
+      const descendantIds = [];
+      const start = byId.get(Number(id));
+      if (start) {
+        const stack = [start];
+        while (stack.length) {
+          const node = stack.pop();
+          if (!node || node.id === Number(id)) {
+            // include self only once via ancestors; skip duplicate push here
+          }
+          if (Array.isArray(node.children)) {
+            for (const c of node.children) {
+              descendantIds.push(c.id);
+              const full = byId.get(c.id);
+              if (full) stack.push(full);
+            }
+          }
+        }
+      }
+
+      // Union of ids for effective refresh
+      const idsToRefresh = Array.from(new Set([...ancestorIds, ...descendantIds]));
+
+      // fetch effective for union (batched)
       let effs = [];
-      if (ancestorIds.length) {
+      if (idsToRefresh.length) {
         const chunkSize = 200;
-        for (let i = 0; i < ancestorIds.length; i += chunkSize) {
-          const chunk = ancestorIds.slice(i, i + chunkSize);
+        for (let i = 0; i < idsToRefresh.length; i += chunkSize) {
+          const chunk = idsToRefresh.slice(i, i + chunkSize);
           const res = await api(`/nodes/effective?ids=${chunk.join(',')}`);
           effs = effs.concat(res);
         }
