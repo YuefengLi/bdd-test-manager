@@ -9,7 +9,15 @@ export async function api(path, options) {
     ? { 'Content-Type': 'application/json', ...((options && options.headers) || {}) }
     : (options && options.headers) || undefined;
 
-  const base = process.env.REACT_APP_API_BASE || 'http://localhost:3000';
+  // Resolve API base URL in this order:
+  // 1) Build-time env: REACT_APP_API_BASE
+  // 2) Runtime global: window.__API_BASE__
+  // 3) Runtime meta tag: <meta name="api-base" content="..." />
+  // 4) Fallback: current origin (useful when backend is served from same origin)
+  const runtimeBase = (typeof window !== 'undefined'
+    ? (window.__API_BASE__ || (typeof document !== 'undefined' && document.querySelector('meta[name="api-base"]')?.getAttribute('content')))
+    : undefined);
+  const base = process.env.REACT_APP_API_BASE || runtimeBase || (typeof window !== 'undefined' ? window.location.origin : '');
   const res = await fetch(`${base}${path}`, mergedOptions);
   if (!res.ok) {
     const errorBody = await res.text();
