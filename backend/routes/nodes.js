@@ -9,6 +9,30 @@ const router = Router();
 
 router.get('/health', (_req, res) => res.json({ ok: true }));
 
+// Batch effective for many ids: /nodes/effective?ids=1,2,3
+router.get('/nodes/effective', (req, res) => {
+  const idsParam = req.query.ids;
+  if (!idsParam || typeof idsParam !== 'string') {
+    return res.status(400).json({ error: 'ids query param required (comma-separated)' });
+  }
+  const ids = idsParam.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
+  if (!ids.length) return res.json([]);
+  const uniq = Array.from(new Set(ids));
+  const out = [];
+  for (const id of uniq) {
+    const exists = getNode(id);
+    if (!exists) continue;
+    out.push({ id, status: getEffectiveStatus(id), tags: getEffectiveTags(id) });
+  }
+  res.json(out);
+});
+
+router.get('/nodes/:id/effective', (req, res) => {
+  const id = Number(req.params.id);
+  if (!getNode(id)) return res.status(404).json({ error: 'Not found' });
+  res.json({ status: getEffectiveStatus(id), tags: getEffectiveTags(id) });
+});
+
 router.get('/nodes/:id', (req, res) => {
   const node = getNode(req.params.id);
   if (!node) return res.status(404).json({ error: 'Not found' });
@@ -19,12 +43,6 @@ router.get('/nodes', (req, res) => {
   const root = Number(req.query.root);
   if (!root) return res.status(400).json({ error: 'root query param required' });
   res.json(getSubtree(root));
-});
-
-router.get('/nodes/:id/effective', (req, res) => {
-  const id = Number(req.params.id);
-  if (!getNode(id)) return res.status(404).json({ error: 'Not found' });
-  res.json({ status: getEffectiveStatus(id), tags: getEffectiveTags(id) });
 });
 
 router.post('/nodes', (req, res) => {

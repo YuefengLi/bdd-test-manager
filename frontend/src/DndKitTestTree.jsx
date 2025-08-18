@@ -35,13 +35,16 @@ export default function DndKitTestTree() {
       // Backend expects a numeric root id in the `root` query param.
       // The database is seeded with a single root that will likely have id=1.
       const nodesArr = await api('/nodes?root=1');
-      // Build effective info for each node
-      const effArr = await Promise.all(
-        nodesArr.map(async (n) => {
-          const eff = await api(`/nodes/${n.id}/effective`);
-          return { id: n.id, ...eff };
-        })
-      );
+      // Batch fetch effective info to avoid 500+ parallel requests
+      const allIds = nodesArr.map(n => n.id);
+      const chunkSize = 200; // keep URL length and load reasonable
+      const effArr = [];
+      for (let i = 0; i < allIds.length; i += chunkSize) {
+        const chunk = allIds.slice(i, i + chunkSize);
+        const res = await api(`/nodes/effective?ids=${chunk.join(',')}`);
+        // res: [{ id, status, tags }]
+        for (const e of res) effArr.push(e);
+      }
       setData({ nodes: nodesArr, effective: effArr });
     } catch (err) {
       setError(err);
@@ -64,13 +67,16 @@ export default function DndKitTestTree() {
         if (cur.parent_id == null) break;
         cur = byId.get(cur.parent_id);
       }
-      // fetch effective for self + ancestors
-      const effs = await Promise.all(
-        ancestorIds.map(async (nid) => {
-          const eff = await api(`/nodes/${nid}/effective`);
-          return { id: nid, ...eff };
-        })
-      );
+      // fetch effective for self + ancestors (batched)
+      let effs = [];
+      if (ancestorIds.length) {
+        const chunkSize = 200;
+        for (let i = 0; i < ancestorIds.length; i += chunkSize) {
+          const chunk = ancestorIds.slice(i, i + chunkSize);
+          const res = await api(`/nodes/effective?ids=${chunk.join(',')}`);
+          effs = effs.concat(res);
+        }
+      }
 
       // merge into existing arrays to avoid full reload
       setData(prev => {
